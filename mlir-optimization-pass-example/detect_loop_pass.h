@@ -1,9 +1,8 @@
-#ifndef OPTIMIZATION_PASS_H
-#define OPTIMIZATION_PASS_H
+#ifndef DETECT_LOOP_PASS_H
+#define DETECT_LOOP_PASS_H
 
 #include "mlir/Pass/Pass.h"
 
-std::unique_ptr<mlir::Pass> createLoopOptimizationPass();
-// Placeholder for future pass declarations
+std::unique_ptr<mlir::Pass> createDetectLoopPass();
 
-#endif // OPTIMIZATION_PASS_H
+#endif // DETECT_LOOP_PASS_H
