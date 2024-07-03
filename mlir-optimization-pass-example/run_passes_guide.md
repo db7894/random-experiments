@@ -57,3 +57,10 @@ You should find that the two operations I've given leading names
 %loop_invariant2 = arith.addi %inv0, %inv1 : i32
 ```
 are hoisted before the loop in your output IR. 
+
+### Debug Info
+You'll notice a bunch of debugging statements I've littered throughout the pass. They won't print on an ordinary run of the binary, but if you add a flag:
+```
+bazel-bin/optimizer --debug-pass-opt tests/licm_example.mlir -o licm_out.mlir
+```
+you'll see the debug logging. (I'd have just named it `debug`, but I LLVM already has its own `debug` flags I was probably importing somewhere so this caused re-definition errors)
