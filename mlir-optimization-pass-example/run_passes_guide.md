@@ -48,7 +48,7 @@ So, to check these criteria, we use the dominator information we computed:
 You can run the pass with similar bazel build commands as above. 
 ```
 bazel build //:optimizer
-bazel-bin/optimizer tests/licm_example.mlir -o licm_out.mlir
+bazel-bin/optimizer tests/licm_example.mlir -p loop-optimization -o licm_out.mlir
 ```
 
 You should find that the two operations I've given leading names
@@ -64,3 +64,123 @@ You'll notice a bunch of debugging statements I've littered throughout the pass.
 bazel-bin/optimizer --debug-pass-opt tests/licm_example.mlir -o licm_out.mlir
 ```
 you'll see the debug logging. (I'd have just named it `debug`, but I LLVM already has its own `debug` flags I was probably importing somewhere so this caused re-definition errors)
+
+## Loop Unrolling
+
+### Notes on the Pass
+N/B: I chose an arbitrary unroll factor (# times to replicate the loop body) of 4. Haven't gotten around to something more dynamic yet. 
+
+#### Determining whether to unroll
+To determine if the loop should be unrolled:
+- we check if loop bounds and step are constant: if the step isn't constnat we don't unroll.
+- if upper and lower bound are constant, we calculate the _trip count_ (# loop iterations) and unroll if it's greater than 1.
+- if upper bound is not constant, we also allow unrolling w/ a runtime check
+  - this is `remainingIters`, `unrollThreshold`, and `unrollCondition`. 
+
+The `unrollLoop` method does the actual work: `newForOp` is to replace the original `forOp`. It has same bounds/step but contains unrolled code, and an if-else structure that unrolls in the `if` block (when we can unroll) and just clones the loop body in the `else` block (when we can't). 
+
+#### Performing unrolling
+This code from the `if` block:
+```
+mlir::Value currentIV = iv;
+mlir::ValueRange currentIterArgs = iterArgs;
+mlir::SmallVector<mlir::Value, 6> finalYieldOperands;
+
+for (int i = 0; i < unrollFactor; ++i) {
+  mlir::IRMapping mapping;
+  mapping.map(forOp.getInductionVar(), currentIV);
+  mapping.map(forOp.getRegionIterArgs(), currentIterArgs);
+
+  for (mlir::Operation &op :
+        forOp.getBody()->without_terminator()) {
+    thenBuilder.clone(op, mapping);
+  }
+```
+replicates the loop body `unrollFactor` times. The mapping stores what the current iv and block arguments (e.g. a value we're accumulating into during a loop) are. 
+
+We need this mapping when we clone operations from the loop body with `thenBuilder.clone(op, mapping);` to make sure we're using the correct arguments to that op. Internally, if we look at MLIR's `Operation.h` (for docstring) and `Operation.cpp` for what `op.clone(mapping)` does, we see how remapping of operands happens during cloning (as of writing, this is line 682 of `mlir/lib/IR/Operation.cpp`):
+```
+// Remap the operands.
+if (options.shouldCloneOperands()) {
+  operands.reserve(getNumOperands());
+  for (auto opValue : getOperands())
+    operands.push_back(mapper.lookupOrDefault(opValue));
+}
+```
+
+To make this a bit more concrete, compare the original IR example I use:
+```
+func.func @unroll_test(%n : index, %A : memref<?xf32>) {
+  %c0 = arith.constant 0 : index
+  %c1 = arith.constant 1 : index
+  %c2 = arith.constant 2.0 : f32
+  scf.for %i = %c0 to %n step %c1 {
+    %val = memref.load %A[%i] : memref<?xf32>
+    %doubled = arith.mulf %val, %c2 : f32
+    memref.store %doubled, %A[%i] : memref<?xf32>
+  }
+  return
+}
+```
+and part of the unrolling:
+```
+module {
+  func.func @unroll_test(%arg0: index, %arg1: memref<?xf32>) {
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %cst = arith.constant 2.000000e+00 : f32
+    scf.for %arg2 = %c0 to %arg0 step %c1 {
+      %0 = arith.subi %arg0, %arg2 : index
+      %c4 = arith.constant 4 : index
+      %1 = arith.muli %c1, %c4 : index
+      %2 = arith.cmpi sge, %0, %1 : index
+      scf.if %2 {
+        //unrolled
+        %3 = memref.load %arg1[%arg2] : memref<?xf32> // use IV
+        %4 = arith.mulf %3, %cst : f32
+        memref.store %4, %arg1[%arg2] : memref<?xf32>
+        %5 = arith.addi %arg2, %c1 : index // update IV
+
+        //unrolled
+        %6 = memref.load %arg1[%5] : memref<?xf32> // use updated IV
+        %7 = arith.mulf %6, %cst : f32
+        memref.store %7, %arg1[%5] : memref<?xf32>
+        %8 = arith.addi %5, %c1 : index // update IV
+...
+```
+You'll notice that each of the calls to `arith.mulf` and `memref.store` are updated with new arguments in each unroll instance. This for loop doesn't actually have any iter args (if it did, they'd be specified with something like `iter_args(%acc = %init)`), but when we update the induction variable (each `arith.addi` call), the `mapping` IRMapping ensures that we clone the `memref.load` op with the updated IV as its argument (the IV is used to index into the array, which in this case is `%arg1`). 
+
+
+The rest of the code in the for loop above:
+```
+auto yieldOp = mlir::cast<mlir::scf::YieldOp>(
+    forOp.getBody()->getTerminator());
+mlir::SmallVector<mlir::Value, 6> yieldOperands =
+    llvm::to_vector(llvm::map_range(
+        yieldOp.getResults(), [&](mlir::Value v) {
+          return mapping.lookupOrDefault(v);
+        }));
+
+if (i == unrollFactor - 1) {
+  finalYieldOperands = yieldOperands;
+} else {
+  currentIterArgs = yieldOperands;
+  currentIV = thenBuilder.create<mlir::arith::AddIOp>(
+      loc, currentIV, forOp.getStep());
+}
+```
+updates the induction variable (`currentIV` gets incremented by `forOp.getStep()` in the final `else` block; it's initially known from `forOp.getLowerBound()`) and the loop-carried dependencies (`currentIterArgs` is set to `yieldOperands`). 
+
+The yield op (implicitly inserted by MLIR) passes values to the next iteration of the loop (these are things we update on each loop iteration, the loop-carried dependencies). We can retrieve its operands via `yieldOp.getResults()`, which in this case are `%val` and `%doubled` in our original for loop. So for each of these, we look up the latest value in `mapping` and insert into our SmallVector of values `yieldOperands`. (the first value for our iter args comes from the `forOp.getInitArgs()`)
+
+Then we finally 
+```
+thenBuilder.create<mlir::scf::YieldOp>(loc, finalYieldOperands);
+```
+
+### Running the pass
+Bazel build the `optimizer` binary, then run:
+```
+bazel-bin/optimizer tests/loop_unroll_example.mlir -p loop-unrolling -o loop_unrolled.mlir
+```
+

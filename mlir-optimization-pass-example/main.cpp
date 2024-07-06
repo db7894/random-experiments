@@ -12,6 +12,7 @@
 
 #include "detect_loop_pass.h"
 #include "example_loop_optimize_pass.h"
+#include "loop_unroll_pass.h"
 
 static llvm::cl::opt<std::string> inputFilename(llvm::cl::Positional,
                                                 llvm::cl::desc("<input file>"),
@@ -20,6 +21,9 @@ static llvm::cl::opt<std::string> inputFilename(llvm::cl::Positional,
 static llvm::cl::opt<std::string>
     outputFilename("o", llvm::cl::desc("Output filename"),
                    llvm::cl::value_desc("filename"), llvm::cl::init("-"));
+
+static llvm::cl::opt<std::string> passOption("p", llvm::cl::desc("pass to run"),
+                                             llvm::cl::init("-"));
 
 /*
 To run:
@@ -64,8 +68,11 @@ int main(int argc, char **argv) {
   mlir::PassManager pm(&context);
   // TODO: Add your custom optimization pass here
   // pm.addNestedPass<mlir::func::FuncOp>(createDetectLoopPass());
-  pm.addNestedPass<mlir::func::FuncOp>(createLoopOptimizationPass());
-  // pm.addNestedPass<mlir::func::FuncOp>(llvm::createLoopPass());
+
+  if (passOption == "loop-optimization")
+    pm.addNestedPass<mlir::func::FuncOp>(createLoopOptimizationPass());
+  else if (passOption == "loop-unrolling")
+    pm.addNestedPass<mlir::func::FuncOp>(createLoopUnrollingPass());
 
   if (mlir::failed(pm.run(*module))) {
     llvm::errs() << "Error applying optimization pass\n";
