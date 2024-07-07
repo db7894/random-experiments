@@ -68,6 +68,12 @@ you'll see the debug logging. (I'd have just named it `debug`, but I LLVM alread
 ## Loop Unrolling
 
 ### Notes on the Pass
+Compilers generally perform loop unrolling to increase the # of instructions executed between executions of the loop branch logic. [This Stack Overflow post](https://stackoverflow.com/questions/2349211/when-if-ever-is-loop-unrolling-still-useful) has some notes. Unrolled loops can be vectorized, exploit cache locality, etc. 
+
+The tl;dr is that you aim to gain some execution speed (by parallelizing statements in the loop if they're not dependent on one another) at the expense of instruction count / binary size. [This article](https://lemire.me/blog/2019/11/12/unrolling-your-loops-can-improve-branch-prediction/) explains how unrolling loops can improve branch prediction. 
+
+[ TODO : add some concrete examples from Godbolt ]
+
 N/B: I chose an arbitrary unroll factor (# times to replicate the loop body) of 4. Haven't gotten around to something more dynamic yet. 
 
 #### Determining whether to unroll
@@ -184,3 +190,16 @@ Bazel build the `optimizer` binary, then run:
 bazel-bin/optimizer tests/loop_unroll_example.mlir -p loop-unrolling -o loop_unrolled.mlir
 ```
 
+### TODOs and more on loop unrolling
+This isn't a full-on unrolling pass just yet. I've chosen a fixed unroll factor (4) to get the basics working. I still want to add something to determinte trip count and apply full unroll, and perhaps some logic to determine whether and how much to unroll depending on standard heuristics (described below). 
+
+Usually compilers will use a few heuristics (given the tradeoffs inherent to loop unrolling) to determine the appropriate unroll factor. 
+
+You do a few things:
+- Estimate loop's tripcount. You can calculate this directly when your bounds are constant. When they're variable, compilers can still generate code that performs check at runtime to see how many times the loop will run (the code in `loop_unroll_pass.cpp` for calculating `remainingIters`, `unrollThreshold`, and `unrollCondition` do this in my example). 
+- Look at the loop body to determine number of instructions, memory footprint, data dependencies. 
+- Consider the target architecture: look at instruction cache size, # registers available, and SIMD capabilities (for parallelizing calculations). 
+
+With all of this information, you can apply heuristics: for loops with small tripcounts or small bodies, you could apply a large unroll factor or do a full unroll; loops w/ large bodies might impose instruction cache pressure. If you unroll too much, you might end up with [_register spilling_](https://www.cs.cmu.edu/afs/cs.cmu.edu/user/tcm/www/thesis/subsubsection2_10_2_3_1.html). 
+
+If you have a vector register, you can choose an unroll factor that aligns w/ the vector register size, or one that aligns memory accesses to cache line boundaries. 
