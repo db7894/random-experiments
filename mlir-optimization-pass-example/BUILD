@@ -48,6 +48,21 @@ cc_library(
     alwayslink = 1,
 )
 
+cc_library(
+    name = "loop_fusion_pass",
+    srcs = ["loop_fusion_pass.cpp"],
+    hdrs = ["loop_fusion_pass.h"],
+    deps = [
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:SCFDialect",
+        "@llvm-project//mlir:ArithDialect",
+        "@llvm-project//mlir:FuncDialect",
+        "@llvm-project//mlir:TransformUtils",
+    ],
+    alwayslink = 1,
+)
+
 cc_binary(
     name = "optimizer",
     srcs = ["main.cpp"],
@@ -55,6 +70,7 @@ cc_binary(
         ":detect_loop_pass",
         ":example_loop_optimize_pass",
         ":loop_unroll_pass",
+        ":loop_fusion_pass",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",

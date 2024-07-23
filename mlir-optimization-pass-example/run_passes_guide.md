@@ -203,3 +203,13 @@ You do a few things:
 With all of this information, you can apply heuristics: for loops with small tripcounts or small bodies, you could apply a large unroll factor or do a full unroll; loops w/ large bodies might impose instruction cache pressure. If you unroll too much, you might end up with [_register spilling_](https://www.cs.cmu.edu/afs/cs.cmu.edu/user/tcm/www/thesis/subsubsection2_10_2_3_1.html). 
 
 If you have a vector register, you can choose an unroll factor that aligns w/ the vector register size, or one that aligns memory accesses to cache line boundaries. 
+
+## Loop Fusion
+### Theory
+
+
+### Running the pass
+Same as above, then:
+```
+bazel-bin/optimizer tests/loop_fusion_example.mlir -p loop-fusion -o loops_fused.mlir
+```
