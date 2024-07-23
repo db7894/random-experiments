@@ -1,6 +1,4 @@
 # Running passes in this folder
-## Purpose
-Writing a few MLIR passes when I have time, for learning's sake. 
 
 ## Setup notes
 Jeremy Kun has a very helpful guide on setting up LLVM that I used to create the initial `WORKSPACE` and `bazel/` setup: https://www.jeremykun.com/2023/08/10/mlir-getting-started/
@@ -207,6 +205,8 @@ If you have a vector register, you can choose an unroll factor that aligns w/ th
 ## Loop Fusion
 ### Theory
 
+
+https://en.wikipedia.org/wiki/Data_dependency#:~:text=in%20this%20example.-,Anti%2Ddependency%20(write%2Dafter%2Dread),%2Dread%20(WAR)%20hazard.
 
 ### Running the pass
 Same as above, then:
