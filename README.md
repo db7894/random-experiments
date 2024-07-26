@@ -1,2 +1,2 @@
 # random-experiments
-Random things I'm trying and learning. Currently, one folder in this repo has some code I ported from OCaml to Haskell for differentiable computations (pretty small). Another has some compiler passes I've written in MLIR for things like loop optimization (using the `SCF` dialect). 
+Currently, one folder in this repo has some code I ported from OCaml to Haskell for differentiable computations (nothing interesting yet). Another has some compiler passes I've written in MLIR for things like loop optimization (using the `SCF` dialect). 
