@@ -203,10 +203,70 @@ With all of this information, you can apply heuristics: for loops with small tri
 If you have a vector register, you can choose an unroll factor that aligns w/ the vector register size, or one that aligns memory accesses to cache line boundaries. 
 
 ## Loop Fusion
-### Theory
+### Overview
+The goal of loop fusion is exactly what it sounds like: given code with multiple loops, like 
+```
+func.func @loop_fusion_example(%arg0: memref<?xf32>, %arg1: memref<?xf32>, %arg2: memref<?xf32>) {
+  %c0 = arith.constant 0 : index
+  %c1 = arith.constant 1 : index
+  %c10 = arith.constant 10 : index
+
+  scf.for %i = %c0 to %c10 step %c1 {
+    %0 = memref.load %arg0[%i] : memref<?xf32>
+    %1 = arith.addf %0, %0 : f32
+    memref.store %1, %arg1[%i] : memref<?xf32>
+  }
+
+  scf.for %i = %c0 to %c10 step %c1 {
+    %2 = memref.load %arg1[%i] : memref<?xf32>
+    %3 = arith.mulf %2, %2 : f32
+    memref.store %3, %arg2[%i] : memref<?xf32>
+  }
+
+  return
+}
+```
+our goal is to fuse the two loops into one if it's valid to do so. The fused loop for the above example looks like this:
+```
+scf.for %arg3 = %c0 to %c10 step %c1 {
+  %0 = memref.load %arg0[%arg3] : memref<?xf32>
+  %1 = arith.addf %0, %0 : f32
+  memref.store %1, %arg1[%arg3] : memref<?xf32>
+  %2 = memref.load %arg1[%arg3] : memref<?xf32>
+  %3 = arith.mulf %2, %2 : f32
+  memref.store %3, %arg2[%arg3] : memref<?xf32>
+}
+```
+Intuitively, this is a valid fusion: the memory accesses in our loops are to different function arguments and the computations in each loop are done on those different memory accesses, so we don't have any dependencies between the two loops that might make a fusion semantically incorrect. 
 
 
-https://en.wikipedia.org/wiki/Data_dependency#:~:text=in%20this%20example.-,Anti%2Ddependency%20(write%2Dafter%2Dread),%2Dread%20(WAR)%20hazard.
+Generally, we get a few benefits out of loop fusion:
+
+__Reduced loop overhead__: We have to do less loop variable initialization, loop condition checking, loop counter incrementing/decrementing, jumps to the start of the loop
+
+__Improved cache locality__: also fairly familiar, but to use an example, 
+```
+for (int i = 0; i < 1000; i++) {
+    a[i] = b[i] + 1;
+}
+
+for (int i = 0; i < 1000; i++) {
+    c[i] = a[i] * 2;
+}
+```
+`a[i]` might be evicted from the cache between the write in the first loop and the read in the second loop (especially if `a` is large). 
+
+__Decreased code size__: self-explanatory. From this we'll get better instruction cache utilization, reduced memory usage, faster program load times. 
+
+__Other optimizations__: we might be able to more easily optimize code in loops once fused, e.g. CSE opportunities may show up, more vectorization opportunities, better constant propagation
+
+All that said, classic issues loop fusion can introduce are increased register pressure (risk of spilling), worse cache performance (if working set > cache size), potentially harder to parallelize. 
+
+### Theory / Explanation
+Actually fusing loops involves a few steps:
+1. Identify candidates: if adjacent loops have the same iteration steps (bounds and step, e.g. iterating from 0 to 10 w/ step 1), we might be able to fuse. 
+2. Dependency analysis: Fusion needs to preserve data dependencies. There are three types (source [here](https://en.wikipedia.org/wiki/Data_dependency#:~:text=in%20this%20example.-,Anti%2Ddependency%20(write%2Dafter%2Dread),%2Dread%20(WAR)%20hazard)): flow dependence (first loop writes, second reads), anti-dependence (first loop reads, second writes), and output dependence (first loop writes, second writes). 
+3. Fuse: exactly what it sounds like. In MLIR (see implementation) we create a new `scf.for` op with the same bounds and step size, clone bodies of both loops into the new loop, update IV uses in the second loop body (since they'll be referring to their old IVs, which aren't the same as those in the newly-created loop body), then remove original loops. Will also need to update operand references. 
 
 ### Running the pass
 Same as above, then:

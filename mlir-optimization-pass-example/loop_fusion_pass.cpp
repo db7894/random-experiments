@@ -208,7 +208,7 @@ struct LoopFusionPass
     for (mlir::Operation &op : secondLoop.getBody()->without_terminator())
       builder.clone(op, mapping);
 
-    std::cout << "Updating SSA form" << std::endl;
+    std::cout << "Updating operand references" << std::endl;
     fusedLoop.walk([&](mlir::Operation *op) {
       for (auto &operand : op->getOpOperands()) {
         if (mlir::Value mappedValue = mapping.lookupOrNull(operand.get()))
