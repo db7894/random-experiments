@@ -14,6 +14,7 @@
 #include "example_loop_optimize_pass.h"
 #include "loop_fusion_pass.h"
 #include "loop_unroll_pass.h"
+#include "loop_interchange_polyhedral.h"
 
 static llvm::cl::opt<std::string> inputFilename(llvm::cl::Positional,
                                                 llvm::cl::desc("<input file>"),
@@ -76,6 +77,8 @@ int main(int argc, char **argv) {
     pm.addNestedPass<mlir::func::FuncOp>(createLoopUnrollingPass());
   else if (passOption == "loop-fusion")
     pm.addNestedPass<mlir::func::FuncOp>(createLoopFusionPass());
+  else if (passOption == "loop-interchange")
+    pm.addNestedPass<mlir::func::FuncOp>(createLoopInterchangePass());
 
   if (mlir::failed(pm.run(*module))) {
     llvm::errs() << "Error applying optimization pass\n";

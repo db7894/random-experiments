@@ -3,6 +3,8 @@
 ## Setup notes
 Jeremy Kun has a very helpful guide on setting up LLVM that I used to create the initial `WORKSPACE` and `bazel/` setup: https://www.jeremykun.com/2023/08/10/mlir-getting-started/
 
+Also generally a good idea to set up a Bazel cache somewhere so you're not building LLVM / dependencies from scratch every time you want to run this. 
+
 ## Loop Detection Pass
 This pass basically does nothing. It just checks if you have a loop from the `scf` dialect and spits it back out if so. 
 You can run it with the following two commands, using the `loop_example.mlir` in the `tests/` directory or using your own example. 
@@ -273,3 +275,10 @@ Same as above, then:
 ```
 bazel-bin/optimizer tests/loop_fusion_example.mlir -p loop-fusion -o loops_fused.mlir
 ```
+
+## Loop Interchange
+I wrote this pass using polyhedral analysis for loops, and I'll explain that in `polyhedral_analysis.md`. The tl;dr of this pass is that we might get better cache locality (depending on access patterns) by changing the order of nested loops in e.g. a matmul. 
+
+## Other topics
+
+

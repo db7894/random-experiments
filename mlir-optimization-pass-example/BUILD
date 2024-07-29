@@ -63,6 +63,23 @@ cc_library(
     alwayslink = 1,
 )
 
+cc_library(
+    name = "loop_interchange_pass",
+    srcs = ["loop_interchange_polyhedral.cpp"],
+    hdrs = ["loop_interchange_polyhedral.h"],
+    deps = [
+        "@isl//:isl",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:SCFDialect",
+        "@llvm-project//mlir:ArithDialect",
+        "@llvm-project//mlir:FuncDialect",
+        "@llvm-project//mlir:TransformUtils",
+    ],
+    copts = ["-I$(GENDIR)/external/isl/include/polly"],
+    alwayslink = 1,
+)
+
 cc_binary(
     name = "optimizer",
     srcs = ["main.cpp"],
@@ -71,6 +88,7 @@ cc_binary(
         ":example_loop_optimize_pass",
         ":loop_unroll_pass",
         ":loop_fusion_pass",
+        ":loop_interchange_pass",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
